@@ -78,7 +78,8 @@ class StoreError(Exception):
 
 def _request(method, path, params=None, body=None, prefer=None):
     if not SUPABASE_URL or not SERVICE_KEY:
-        raise StoreError("Supabase is not configured: set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY")
+        missing = [n for n, v in (("SUPABASE_URL", SUPABASE_URL), ("SUPABASE_SERVICE_ROLE_KEY", SERVICE_KEY)) if not v]
+        raise StoreError("Supabase is not configured: missing " + " and ".join(missing))
     url = f"{SUPABASE_URL}/rest/v1/{path}"
     if params:
         url += "?" + urlencode(params, safe="(),.*:")
