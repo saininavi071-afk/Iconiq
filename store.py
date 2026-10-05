@@ -36,8 +36,23 @@ def _load_env_file():
 
 
 _load_env_file()
-SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
-SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
+
+
+def _setting(name, default=""):
+    """Look a setting up tolerantly: a stray space or different capitalisation in the
+    variable's name (easy to do in a hosting dashboard) must not make it vanish."""
+    wanted = name.upper()
+    for key, value in os.environ.items():
+        if key.strip().upper() == wanted and value.strip().strip('"').strip("'"):
+            return value.strip().strip('"').strip("'")
+    return default
+
+
+# The project URL is public (it appears in every page that talks to Supabase), so it
+# is safe as a fallback; the service_role key is secret and must come from the environment.
+DEFAULT_SUPABASE_URL = "https://rhtokxxtlqpzqtkroqxf.supabase.co"
+SUPABASE_URL = _setting("SUPABASE_URL", DEFAULT_SUPABASE_URL).rstrip("/")
+SERVICE_KEY = _setting("SUPABASE_SERVICE_ROLE_KEY")
 
 IST = timezone(timedelta(hours=5, minutes=30))  # India has no daylight saving
 DEFAULT_CAPACITY = 2
