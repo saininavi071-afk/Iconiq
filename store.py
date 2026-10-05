@@ -77,6 +77,8 @@ class StoreError(Exception):
 # ---------- Supabase REST client ----------
 
 def _request(method, path, params=None, body=None, prefer=None):
+    if not SUPABASE_URL or not SERVICE_KEY:
+        raise StoreError("Supabase is not configured: set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY")
     url = f"{SUPABASE_URL}/rest/v1/{path}"
     if params:
         url += "?" + urlencode(params, safe="(),.*:")
@@ -100,7 +102,7 @@ def _request(method, path, params=None, body=None, prefer=None):
         except ValueError:
             pass
         raise StoreError(detail) from None
-    except (urllib.error.URLError, TimeoutError) as e:
+    except (urllib.error.URLError, TimeoutError, ValueError) as e:
         raise StoreError(f"Could not reach Supabase: {e}") from None
     return json.loads(raw) if raw else None
 
