@@ -750,7 +750,8 @@ def handle(h, method):
     except store.StoreError as e:
         h.log_error("Supabase error: %s", e)
         return send(h, 503, page("Database unavailable", header("Can't reach the database right now")
-                                 + '<p class="muted">Please check your internet connection and try again in a moment.</p>'))
+                                 + '<p class="muted">Please check your internet connection and try again in a moment.</p>'
+                                 + f'<p class="muted">Reason: {esc(str(e)[:200])}</p>'))
 
 
 def _handle(h, method):
