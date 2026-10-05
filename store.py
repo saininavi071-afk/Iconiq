@@ -52,7 +52,25 @@ def _setting(name, default=""):
 # is safe as a fallback; the service_role key is secret and must come from the environment.
 DEFAULT_SUPABASE_URL = "https://rhtokxxtlqpzqtkroqxf.supabase.co"
 SUPABASE_URL = _setting("SUPABASE_URL", DEFAULT_SUPABASE_URL).rstrip("/")
-SERVICE_KEY = _setting("SUPABASE_SERVICE_ROLE_KEY")
+# Keys are one unbroken token; a line break or space pasted into the middle breaks them.
+SERVICE_KEY = re.sub(r"\s+", "", _setting("SUPABASE_SERVICE_ROLE_KEY"))
+
+
+def _key_hint():
+    """Safe description of the key in use (never the key itself) to debug a rejected key."""
+    key = SERVICE_KEY
+    parts = key.count(".") + 1
+    project = role = "?"
+    try:
+        import base64
+        seg = key.split(".")[1]
+        claims = json.loads(base64.urlsafe_b64decode(seg + "=" * (-len(seg) % 4)))
+        project, role = claims.get("ref", "?"), claims.get("role", "?")
+    except Exception:
+        pass
+    host = SUPABASE_URL.split("//")[-1].split(".")[0]
+    return (f"[key: {len(key)} characters, {parts} parts, role={role}, project={project}; "
+            f"URL project={host}]")
 
 IST = timezone(timedelta(hours=5, minutes=30))  # India has no daylight saving
 DEFAULT_CAPACITY = 2
@@ -117,6 +135,8 @@ def _request(method, path, params=None, body=None, prefer=None):
             detail = json.loads(detail).get("message", detail)
         except ValueError:
             pass
+        if "api key" in detail.lower():
+            detail += " " + _key_hint()
         raise StoreError(detail) from None
     except (urllib.error.URLError, TimeoutError, ValueError) as e:
         raise StoreError(f"Could not reach Supabase: {e}") from None
