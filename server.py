@@ -56,6 +56,22 @@ class Handler(SimpleHTTPRequestHandler):
             except store.StoreError as e:
                 self.log_error("Supabase error: %s", e)
                 return self.send_json(503, {"error": "Booking is temporarily unavailable. Please call us."})
+        if url.path == "/api/courses":
+            try:
+                return self.send_json(200, store.get_courses())
+            except store.StoreError as e:
+                self.log_error("Supabase error: %s", e)
+                return self.send_json(200, store.DEFAULT_COURSES)
+        if url.path == "/api/certificate":
+            ref = (parse_qs(url.query).get("ref") or [""])[0]
+            try:
+                cert = store.public_certificate(ref)
+            except store.StoreError as e:
+                self.log_error("Supabase error: %s", e)
+                return self.send_json(503, {"error": "Verification is temporarily unavailable. Please try again later."})
+            if not cert:
+                return self.send_json(404, {"error": "No certificate was found with this reference number."})
+            return self.send_json(200, cert)
         # Never serve server-side files, the database or hidden folders.
         lower = url.path.lower()
         if lower.endswith(PRIVATE) or "/." in lower or "__pycache__" in lower:
@@ -71,13 +87,23 @@ class Handler(SimpleHTTPRequestHandler):
         path = urlparse(self.path).path
         if self.is_admin(path):
             return admin.handle(self, "POST")
-        if path != "/api/book":
+        if path not in ("/api/book", "/api/enrol"):
             return self.send_error(404)
         try:
             length = int(self.headers.get("Content-Length", "0"))
             data = json.loads(self.rfile.read(min(length, 20000)) or b"{}")
         except (ValueError, json.JSONDecodeError):
             return self.send_json(400, {"error": "Invalid request."})
+        if path == "/api/enrol":
+            try:
+                rec, err = store.create_enrolment(data.get("name"), data.get("phone"), data.get("email"),
+                                                  [c for c in data.get("courses") or [] if isinstance(c, str)][:20])
+            except store.StoreError as e:
+                self.log_error("Supabase error: %s", e)
+                return self.send_json(503, {"error": "Sorry, we couldn't create your receipt right now. Please try again or call us."})
+            if err:
+                return self.send_json(400, {"error": err})
+            return self.send_json(201, {k: rec[k] for k in ("receipt_no", "created", "name", "phone", "email", "items", "total", "package")})
         try:
             booking_id, err = store.create_booking({
                 "date": data.get("date"), "time": data.get("time"), "service": data.get("service"),

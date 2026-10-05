@@ -7,6 +7,9 @@
   "rewrites": [
     { "source": "/api/slots", "destination": "/api/index?p=/api/slots" },
     { "source": "/api/book", "destination": "/api/index?p=/api/book" },
+    { "source": "/api/enrol", "destination": "/api/index?p=/api/enrol" },
+    { "source": "/api/courses", "destination": "/api/index?p=/api/courses" },
+    { "source": "/api/certificate", "destination": "/api/index?p=/api/certificate" },
     { "source": "/admin", "destination": "/api/index?p=/admin" },
     { "source": "/admin/:path*", "destination": "/api/index?p=/admin/:path*" }
   ],

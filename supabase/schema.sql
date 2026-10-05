@@ -118,3 +118,19 @@ revoke all on function public.book_appointment(jsonb) from public, anon, authent
 revoke all on function public.set_booking_status(bigint, text) from public, anon, authenticated;
 grant execute on function public.book_appointment(jsonb) to service_role;
 grant execute on function public.set_booking_status(bigint, text) to service_role;
+
+-- Course certificates. The admin panel issues them; the public Verify
+-- Certificate page looks one up by its reference number (through the server,
+-- which only returns the fields printed on the certificate).
+create table if not exists public.certificates (
+  id            bigint generated always as identity primary key,
+  created_at    timestamptz not null default now(),
+  ref           text not null unique,
+  student_name  text not null,
+  course        text not null,
+  duration      text not null default '',
+  completed_on  date not null,
+  revoked       boolean not null default false
+);
+alter table public.certificates enable row level security;
+revoke all on public.certificates from anon, authenticated;

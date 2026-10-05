@@ -7,4 +7,6 @@
   <url><loc>https://www.iconiqsalon.com/gallery</loc><priority>0.7</priority></url>
   <url><loc>https://www.iconiqsalon.com/contact</loc><priority>0.8</priority></url>
   <url><loc>https://www.iconiqsalon.com/policies</loc><priority>0.4</priority></url>
+  <url><loc>https://www.iconiqsalon.com/courses</loc><priority>0.6</priority></url>
+  <url><loc>https://www.iconiqsalon.com/verify</loc><priority>0.5</priority></url>
 </urlset>

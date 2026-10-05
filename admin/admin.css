@@ -258,3 +258,16 @@ input:focus, select:focus, textarea:focus { border-color: var(--gold); outline: 
   .stat { padding: 0.9rem; }
   .stat-value { font-size: 1.8rem; }
 }
+
+/* Certificates */
+.ref { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; letter-spacing: 0.03em; }
+.table td > .muted.small { display: block; }
+
+.course-row { display: grid; grid-template-columns: 1fr 180px auto; gap: 1rem; align-items: end; }
+.course-row .btn { min-height: 44px; }
+@media (max-width: 640px) { .course-row { grid-template-columns: 1fr 1fr; } .course-row .btn { grid-column: 1 / -1; } }
+
+.checks { border: 0; padding: 0; margin: 0; display: grid; gap: 0.5rem; }
+.checks legend { font-weight: 600; font-size: 0.9rem; margin-bottom: 0.4rem; padding: 0; }
+.check { display: flex; align-items: center; gap: 0.6rem; font-weight: 500; }
+.check input { width: 18px; height: 18px; min-height: 0; accent-color: var(--gold, #8a6a2f); }

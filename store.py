@@ -187,6 +187,108 @@ def set_setting(key, value):
              prefer="resolution=merge-duplicates,return=minimal")
 
 
+# ---------- Courses & fees ----------
+# Kept as JSON in the settings table, so no database change is needed.
+
+DEFAULT_COURSES = {
+    "courses": [{"name": "Hair", "fee": 10000}, {"name": "Skin", "fee": 15000}, {"name": "Makeup", "fee": 15000}],
+    "package_fee": 40000,
+}
+
+
+def get_courses():
+    try:
+        data = json.loads(get_setting("courses", "") or "")
+        courses = [{"name": str(c["name"])[:60], "fee": int(c["fee"])} for c in data["courses"] if str(c["name"]).strip()]
+        if courses:
+            return {"courses": courses, "package_fee": int(data["package_fee"])}
+    except (ValueError, KeyError, TypeError):
+        pass
+    return json.loads(json.dumps(DEFAULT_COURSES))
+
+
+def save_courses(rows, package_fee):
+    """rows: list of (name, fee_text). Blank names are dropped. Returns an error message or None."""
+    courses = []
+    for name, fee in rows:
+        name = (name or "").strip()
+        if not name:
+            continue
+        if not str(fee).strip().isdigit() or not 0 < int(fee) <= 10_000_000:
+            return f"Enter a fee in rupees (numbers only) for {name}."
+        courses.append({"name": name[:60], "fee": int(fee)})
+    if not courses:
+        return "Keep at least one course."
+    if not str(package_fee).strip().isdigit() or not 0 < int(package_fee) <= 10_000_000:
+        return "Enter the full package fee in rupees (numbers only)."
+    set_setting("courses", json.dumps({"courses": courses, "package_fee": int(package_fee)}))
+    return None
+
+
+# Student course records: one settings row per record (key "enrol:<receipt no>",
+# value = JSON), so no database change is needed and records never overwrite each other.
+
+ENROL_PREFIX = "enrol:"
+RECEIPT_RE = re.compile(r"^RCP-\d{8}-[A-Z0-9]{4,8}$")
+PHONE_RE = re.compile(r"^[6-9]\d{9}$")
+EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
+
+
+def _new_receipt_no():
+    alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+    return f"RCP-{now_ist():%Y%m%d}-" + "".join(secrets.choice(alphabet) for _ in range(4))
+
+
+def create_enrolment(name, phone, email, course_names):
+    """Save a student's course record. Fees are always taken from the saved course list,
+    never from the caller. Returns (record, None) or (None, error message)."""
+    name = (name or "").strip()[:100]
+    phone = re.sub(r"[\s\-()]", "", phone or "")
+    phone = re.sub(r"^(\+91|91|0)(?=\d{10}$)", "", phone)
+    email = (email or "").strip()[:120]
+    if not name:
+        return None, "Please enter the student's name."
+    if not PHONE_RE.match(phone):
+        return None, "Enter a valid 10-digit Indian mobile number."
+    if email and not EMAIL_RE.match(email):
+        return None, "Please enter a valid email address."
+    data = get_courses()
+    fees = {c["name"]: c["fee"] for c in data["courses"]}
+    chosen = [n for n in fees if n in set(course_names or [])]
+    if not chosen:
+        return None, "Please choose at least one course."
+    package = len(chosen) == len(fees) and len(fees) > 1
+    total = data["package_fee"] if package else sum(fees[n] for n in chosen)
+    rec = {"name": name, "phone": phone, "email": email, "courses": chosen, "package": package,
+           "items": [{"name": n, "fee": fees[n]} for n in chosen], "total": total,
+           "created": now_ist().isoformat(timespec="seconds")}
+    for _ in range(5):
+        rec["receipt_no"] = _new_receipt_no()
+        if not _select("settings", select="key", key=f"eq.{ENROL_PREFIX}{rec['receipt_no']}"):
+            set_setting(ENROL_PREFIX + rec["receipt_no"], json.dumps(rec))
+            return rec, None
+    raise StoreError("Couldn't create a receipt number.")
+
+
+def list_enrolments(q=""):
+    out = []
+    for r in _select("settings", select="key,value", key=f"like.{ENROL_PREFIX}*"):
+        try:
+            out.append(json.loads(r["value"]))
+        except (ValueError, TypeError):
+            continue
+    q = (q or "").strip().lower()
+    if q:
+        out = [r for r in out if q in " ".join([r.get("receipt_no", ""), r.get("name", ""), r.get("phone", ""),
+                                                r.get("email", ""), " ".join(r.get("courses", []))]).lower()]
+    return sorted(out, key=lambda r: r.get("created", ""), reverse=True)
+
+
+def delete_enrolment(receipt_no):
+    if RECEIPT_RE.match(receipt_no or ""):
+        _request("DELETE", "settings", {"key": f"eq.{ENROL_PREFIX}{receipt_no}"}, prefer="return=minimal")
+
+
 def capacity():
     try:
         return max(1, int(get_setting("capacity", DEFAULT_CAPACITY)))
@@ -344,6 +446,84 @@ def remove_block(block_id):
 
 def upcoming_closures():
     return _select("blocks", select="*", time="is.null", date=f"gte.{today().isoformat()}", order="date")
+
+
+# ---------- Course certificates ----------
+
+# Reference numbers look like ICQ-2026-7KX4PM. The random part skips 0/O/1/I/L
+# so students can read it off the certificate and type it without mistakes.
+REF_ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ"
+REF_RE = re.compile(r"^[A-Z0-9-]{4,40}$")
+
+
+def clean_ref(ref):
+    """Normalise what a student typed: case, spaces and dash variants."""
+    ref = re.sub(r"[\s\u2010-\u2015-]+", "-", (ref or "").strip().upper())
+    return ref if REF_RE.match(ref) else ""
+
+
+def new_ref():
+    return f"ICQ-{today().year}-" + "".join(secrets.choice(REF_ALPHABET) for _ in range(6))
+
+
+def create_certificate(data):
+    """Issue a certificate. Returns (row, None) or (None, error message)."""
+    c = {k: str(data.get(k) or "").strip()[:200] for k in ("student_name", "course", "duration", "completed_on")}
+    if not c["student_name"] or not c["course"]:
+        return None, "Please enter the student's name and the course."
+    d = parse_date(c["completed_on"])
+    if not d:
+        return None, "Please choose the completion date."
+    if d > today():
+        return None, "The completion date can't be in the future."
+    for _ in range(5):
+        c["ref"] = new_ref()
+        try:
+            rows = _request("POST", "certificates", body=c, prefer="return=representation")
+            return rows[0], None
+        except StoreError as e:
+            if "duplicate" not in str(e):
+                raise
+    raise StoreError("Could not create a unique reference number.")
+
+
+def find_certificates(q=""):
+    rows = _select("certificates", select="*", order="created_at.desc")
+    if q:
+        needle = q.lower()
+        rows = [r for r in rows if needle in " ".join((r["ref"], r["student_name"], r["course"])).lower()]
+    return rows
+
+
+def get_certificate(ref):
+    ref = clean_ref(ref)
+    if not ref:
+        return None
+    rows = _select("certificates", select="*", ref=f"eq.{ref}")
+    return rows[0] if rows else None
+
+
+def set_certificate_revoked(cert_id, revoked):
+    _request("PATCH", "certificates", {"id": f"eq.{int(cert_id)}"}, body={"revoked": bool(revoked)},
+             prefer="return=minimal")
+
+
+def delete_certificate(cert_id):
+    _request("DELETE", "certificates", {"id": f"eq.{int(cert_id)}"}, prefer="return=minimal")
+
+
+def course_names():
+    return sorted({r["course"] for r in _select("certificates", select="course")})
+
+
+def public_certificate(ref):
+    """What the Verify Certificate page may show: only what is printed on the certificate."""
+    r = get_certificate(ref)
+    if not r:
+        return None
+    if r["revoked"]:
+        return {"ref": r["ref"], "revoked": True}
+    return {k: r[k] for k in ("ref", "student_name", "course", "duration", "completed_on")} | {"revoked": False}
 
 
 # ---------- Admin password and sessions ----------
